@@ -1,0 +1,252 @@
+---
+title: "Exploratory Data Analysis on Factors Affecting Low Birth Indicator using R"
+author: "Tracy Whitney Akinyi"
+date: 2020-12-01T21:13:14-05:00
+categories: ["R"]
+tags: ["R Markdown", "plot", "regression"]
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(collapse = TRUE)
+```
+
+
+```{r include=FALSE}
+library(readxl)
+low_birth <- read_excel("C:/Users/TAkinyi/Documents/Factors_of_Low_Birth Weight/Data/low-birth.xlsx")
+View(low_birth)
+attach(low_birth)
+```
+
+# **Analysis of Factors of Low Birth Weight**
+The data on 189 births were collected at Bay state Medical Center,Springfield,Mass,during 1986.The data set contains an indicator of low infant birth weight as a reponse and several risk factors associated with birth weight.
+The data set contains the following variables:
++ _low_ : indicator of birth weight either >=2.5kg(normal weight) or <2.5kg(underweight)
++ _age_ :mother's age in years
++ _lwt_ : Mother's weight in pounds at last menstrual period
++ _race_: Mother's race(white, black or other)
++ _smoke_: Smoking status during pregnancy(yes,no)
++ _ht_ :History of hypertension(yes,no)
++ _ui_ : Presence of uterine irritability(yes,no)
++ _ftv_: Number of physician visits during 1st trimester(0-6)
++ _ptl_ : Number of previous premature labours(0-3)
++ _bwt_ :Birth weight in grams
+
+We will first tidy our dataset by;
++ categorizing our ordinal and categorical variables into factors
++ converting lwt and bwt into the same unit of measurement(kgs)
+
+```{r include=FALSE}
+library(dplyr)
+low_birth$low <- factor(low_birth$low,
+                        levels=c(0,1),
+                        labels=c(">=2.5 kg","<2.5 kg"))
+low_birth$race <-factor(low_birth$race,
+                        levels=c(1,2,3),
+                        labels=c("white","black","other"))
+low_birth$smoke <- factor(low_birth$smoke,
+                          levels=c(0,1),
+                          labels =c("yes","no"))
+low_birth$ht <- factor(low_birth$ht,
+                       levels=c(0,1),
+                       labels =c("yes","no"))
+low_birth$ui <- factor(low_birth$ui,
+                       levels=c(0,1),
+                       labels =c("yes","no"))
+low_birth$ptl<-factor(low_birth$ptl)
+low_birth$ftv<-factor(low_birth$ftv)
+new<-low_birth %>%
+     mutate(
+       age_category = dplyr::case_when(
+         age<=19 ~ "<19",
+         age>19 & age<=25 ~"20-25",
+         age>25 & age<=29 ~"25-29",
+         age>29 ~ ">29"
+       ))
+new$age_category<-factor(new$age_category)
+new<-new %>%
+  mutate(lwt=lwt/2.20462) %>%
+  mutate(bwt=bwt/1000)
+```
+
+```{r}
+library(SmartEDA)
+library(ISLR)
+ExpCatViz(
+  new %>%
+    select(low,ftv),
+  target="ftv"
+)
+```
+The graph above shows the effect of physician visits on the birth weight. The barplot is placed proportions.Mothers who made 6 physician visits during the first semester had normal weighted babies(>=2.5kg).This could translate that the more physician visits during the first semester, the higher the chances of having normal weight babies and the less likely the mothers would have underweight babies. However we will ascertain this speculation by conducting hypothesis tests.
+
+## *Descriptive Statistics*
+Descriptive statistics is used to explore numeric variables either as a whole or separated in groups of categorical variables.
+
+```{r}
+library(dlookr)
+library(flextable)
+new %>% diagnose_numeric()%>%
+  flextable()
+```
+The table above gives us the summary statistics for the numeric variables.
+Mother's age(age),Mother's weight(lwt) and the Birth weight of the child(bwt).
+We can as well use tbl_summary from gtsummary package to get the descriptive statistics.
+```{r echo=FALSE}
+library(gtsummary)
+table2 <-
+  new%>%
+  select(low,age,age_category,lwt,race,smoke,ptl,ht,ui,ftv,bwt)%>%
+  tbl_summary(
+    by = low, missing = "no",
+    label=list(low~"Birth weight indicator",age~"Mother's age",age_category~"Age Category",lwt~"Mother's weight at last menstrual period",race~"Mother's race",smoke~"Smoking status",
+               ptl~"Number of previous premature labours",ht~"Hypertension",ui~"Uterine irritability",
+               ftv~"No. of physician visits at 1st trimester",bwt~"Birth weight"),
+    statistic = list(all_continuous() ~ "{mean} ({sd})",
+                     all_categorical() ~ "{n} ({p}%)"),
+    type = list(low~"categorical",age~"continuous",age_category~"categorical",lwt~"continuous",
+                race~"categorical",smoke~"categorical",ptl~"categorical",
+                ht~"categorical",ui~"categorical",ftv~"categorical",bwt~"continuous"))%>%
+  modify_spanning_header(c("stat_1", "stat_2") ~ "**Birth weight indicator**")%>%
+  add_p()%>%
+  as_flex_table()
+
+table2
+
+```
+Categorical variables are summarized by counts and percentages, while numeric variables by mean and standard deviation. _by_ species the grouping variable, which in this case is the *birth weight indicator*. _add_p()_ conducts statistical tests with all variables and provides p_values. Non_parametric variables uses Wilcoxon rank sum test for comparing two groups. Categorical Variables are checked with Fisher's exact test if the number of observations in any groups are less than 5 observations. Pearson's Chi-squared test is used for number of variables in any groups that are more than 5.
+
+## *Explore Distribution with skewness and kurtosis test*
+
+### _*Skewness*_
+
+Histograms and density plots offers us a glimpse of the data on continuous variables.Skewness is used to measure the lack of symmetry of a variable.A data is symmetric if it looks the same to the left  and right of the central point.The skewness for a perfectly symmetrical distribution is 0. Positive skewness in a data indicates that the data is skewed to the right, while a negatively skewed distribution is skewed to the left.
+
+
+```{r echo=FALSE}
+library(DataExplorer)
+plot_density(new)
+```
+Birth weight(bwt) appears bell-shaped(symmetric) while Mother's age(age) and Mother's weight(lwt) is right-skewed.
+
+Let's test for skewness on the mother's age
+```{r}
+library(moments)
+agostino.test(new$age)
+```
+From the p-value the skewness of age indicates that the data is significantly skewed and therefore rejects the null hypothesis about the data not skewed and therefore not normally distributed.
+
+Testing for skewness on the Birth weight
+```{r echo=FALSE}
+agostino.test(new$bwt)
+```
+From the p-value the skewness of birth weight indicates that the data is not significantly skewed and therefore fails to reject the null hypothesis about the data not skewed and therefore is normally distributed.The skewness indicates the birth weight is slightly skewed to the left.
+
+Testing for skewness on th mother's age
+```{r echo=FALSE}
+agostino.test(new$lwt)
+```
+From the p-value the skewness of mother's weight indicates that the data is significantly skewed and therefore rejects the null hypothesis about the data not skewed and therefore not normally distributed.The skewness is just the same as the mother's age;right skewed.
+
+### _*Kurtosis*_
+Kurtosis is the measure of heavy tails or outliers present in the distribution.The kurtosis value for a normal distribution is at around 3.Let's test for kurtosis on our continuous variables
+
+```{r}
+anscombe.test(new$age)
+```
+
+```{r echo=FALSE}
+anscombe.test(new$bwt)
+```
+
+```{r echo=FALSE}
+anscombe.test(new$lwt)
+```
+For birth weight and the mother's age the kurtosis values are not significantly further away from 3.Indicating that the data is normally distributed and no possible outliers.In contrast, the kurtosis for the mother's weight is significantly further away from 3 and the p-value indicates that the data is not normally distributed and there are probable outliers.
+
+## *Normality*
+
+The normality of the distribution should be checked.This helps us to determine the correct statistical test. If the data is normally distributed , we ought to use parametric tests for instance : t-test(for 2 groups) or anova(>2 groups).If however the data is not normally distributed we should use non-parametric tests like Mann-Whitney or Kruskal-Wallis.
+To check for normality we can use QQ-plots and Shapiro-Wilk.
+
+```{r}
+plot_qq(new)
+plot_qq(new,by="low")
+```
+The qq plot can be interpreted in the following way, if points are situated close to the diagonal line,the data is probably normally distributed.But how close is close?
+We need a statistical test just to be sure . And that's where Shapiro -Wilk comes in.
+
+```{r echo=FALSE}
+normality(new)%>%
+  mutate_if(is.numeric, ~round(.,3))%>%
+  flextable()
+```
+
+We can conclude that the birth weight is not normally distributed.
+
+## *Compare Groups*
+Box plots help us to explore a combination of numeric and categorical variables.They mostly show is the distribution of both groups differ.
+
+```{r}
+library(ggstatsplot)
+ggbetweenstats(data=new, x= smoke ,y=bwt, type = "np")
+
+```
+The p-value indicates that the mean birth weight differs significantly between mother's who smoke and don't smoke,the same can be said on mean birth weight between mother's with uterine irritability
+
+```{r echo=FALSE}
+library(ggstatsplot)
+ggbetweenstats(data=new, x= ui ,y=bwt, type = "np")
+```
+
+```{r echo=FALSE}
+library(ggstatsplot)
+ggbetweenstats(data=new, x= race ,y=bwt, type = "np")
+```
+
+## _*Explore Correlations*_
+
+To check the relationship between numerical variables we can use correlate() function.
+```{r}
+plot_correlate(new,method="kendall")
+```
+
+```{r echo=FALSE}
+ggcorrmat(data=new)
+```
+Not significant correlations are crossed out.
+
+Plotting correlation graphs for the mother's age on birth weight.
+```{r}
+ggscatterstats(
+  data=new,
+  x=age,
+  y=bwt,
+  type="np"
+)
+```
+As well as the correlation between mother's weight and birth weight.
+If you noticed earlier from the descriptive summaries and kurtosis test, the mother's weight has outliers.We apply a “robust” correlation to decrease the influence of outliers.
+
+
+```{r}
+ggscatterstats(
+  data=new,
+  x=lwt,
+  y=bwt,
+  type="robust"
+)
+```
+
+
+
+```{r echo=FALSE}
+library(ggstatsplot)
+ggbarstats(data=new, x=low, y=ftv,label="both")
+```
+This visualization above shows the relationship between visits to the physician at first trimester to birth weight indicators.
+
+Performing exploratory data analysis is a breeze once you know the right tools to use.
+
+*Thank you!*
+
+
